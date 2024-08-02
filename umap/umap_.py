@@ -562,6 +562,8 @@ def fuzzy_simplicial_set(
         j) entry of the matrix represents the membership strength of the
         1-simplex between the ith and jth sample points.
     """
+    if verbose:
+        print(ts(),"Computing Fuzzy Simplicial Set")
     if knn_indices is None or knn_dists is None:
         knn_indices, knn_dists, _ = nearest_neighbors(
             X,
@@ -603,6 +605,8 @@ def fuzzy_simplicial_set(
     result.eliminate_zeros()
 
     if return_dists is None:
+        if verbose:
+            print(ts(),"Fuzzy Simplicial Set Calculated")
         return result, sigmas, rhos
     else:
         if return_dists:
@@ -613,7 +617,8 @@ def fuzzy_simplicial_set(
             dists = dmat.maximum(dmat.transpose()).todok()
         else:
             dists = None
-
+        if verbose:
+            print(ts(),"Fuzzy Simplicial Set Calculated")
         return result, sigmas, rhos, dists
 
 
@@ -1063,6 +1068,7 @@ def simplicial_set_embedding(
         is turned on, this dictionary includes local radii in the original
         data (``rad_orig``) and in the embedding (``rad_emb``).
     """
+    t_start = time.time_ns()
     graph = graph.tocoo()
     graph.sum_duplicates()
     n_vertices = graph.shape[1]
@@ -1090,6 +1096,7 @@ def simplicial_set_embedding(
 
     graph.eliminate_zeros()
 
+    t_init_start = time.time_ns()
     if isinstance(init, str) and init == "random":
         embedding = random_state.uniform(
             low=-10.0, high=10.0, size=(graph.shape[0], n_components)
@@ -1189,6 +1196,7 @@ def simplicial_set_embedding(
         / (np.max(embedding, 0) - np.min(embedding, 0))
     ).astype(np.float32, order="C")
 
+    t_init_end = time.time_ns()
     if euclidean_output:
         embedding = optimize_layout_euclidean(
             embedding,
@@ -1291,7 +1299,14 @@ def simplicial_set_embedding(
         re = np.log(epsilon + (re / mu_sum))
 
         aux_data["rad_emb"] = re
-
+    t_end = time.time_ns()
+    times = {
+        't_start':t_start,
+        't_init_start':t_init_start,
+        't_init_end':t_init_end,
+        't_end':t_end,
+    }
+    aux_data['times']=times
     return embedding, aux_data
 
 
@@ -1741,6 +1756,7 @@ class UMAP(BaseEstimator):
 
         self.a = a
         self.b = b
+        self.times={}
 
     def _validate_parameters(self):
         if self.set_op_mix_ratio < 0.0 or self.set_op_mix_ratio > 1.0:
@@ -2453,7 +2469,8 @@ class UMAP(BaseEstimator):
 
         if self.verbose:
             print(ts(), "Construct fuzzy simplicial set")
-
+        nn_start_time = time.time()
+        simplicial_start_time=None
         if self.metric == "precomputed" and self._sparse_data:
             # For sparse precomputed distance matrices, we just argsort the rows to find
             # nearest neighbors. To make this easier, we expect matrices that are
@@ -2605,6 +2622,7 @@ class UMAP(BaseEstimator):
             else:
                 nn_metric = self._input_distance_func
             if self.knn_dists is None:
+                nn_start_time = time.time()
                 (
                     self._knn_indices,
                     self._knn_dists,
@@ -2630,7 +2648,8 @@ class UMAP(BaseEstimator):
             self._knn_indices[disconnected_index] = -1
             self._knn_dists[disconnected_index] = np.inf
             edges_removed = disconnected_index.sum()
-
+            
+            simplicial_start_time = time.time()
             (
                 self.graph_,
                 self._sigmas,
@@ -2664,6 +2683,7 @@ class UMAP(BaseEstimator):
                 verbose=self.verbose,
             )
 
+        simplicial_end_time = time.time()
         # Currently not checking if any duplicate points have differing labels
         # Might be worth throwing a warning...
         if y is not None:
@@ -2776,7 +2796,7 @@ class UMAP(BaseEstimator):
 
         if self.verbose:
             print(ts(), "Construct embedding")
-
+        embedding_start_time = time.time()
         if self.transform_mode == "embedding":
             epochs = (
                 self.n_epochs_list if self.n_epochs_list is not None else self.n_epochs
@@ -2814,7 +2834,17 @@ class UMAP(BaseEstimator):
             if self.output_dens:
                 self.rad_orig_ = aux_data["rad_orig"][inverse]
                 self.rad_emb_ = aux_data["rad_emb"][inverse]
+        embedding_end_time = time.time()
 
+        self.times['nn_start']=nn_start_time
+        self.times['fuzzy_simpl_start']=simplicial_start_time
+        self.times['embedding_start']=embedding_start_time
+        self.times['embedding_end']=embedding_end_time
+        if self.transform_mode == 'embedding':
+            emb_times = aux_data['times']
+            for k in ['t_start','t_end','t_init_start','t_init_end']:
+                kk = 'embedding_'+ k
+                self.times[kk] = emb_times[k]
         if self.verbose:
             print(ts() + " Finished embedding")
 
