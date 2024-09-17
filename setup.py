@@ -51,6 +51,7 @@ configuration = {
         "numba >= 0.51.2",
         "pynndescent >= 0.5",
         "tqdm",
+        "faiss-cpu",
     ],
     "extras_require": {
         "plot": [
