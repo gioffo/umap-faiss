@@ -49,6 +49,8 @@ from pynndescent import NNDescent
 from pynndescent.distances import named_distances as pynn_named_distances
 from pynndescent.sparse import sparse_named_distances as pynn_sparse_named_distances
 
+from .indexes import GeneralizedIndex
+
 locale.setlocale(locale.LC_NUMERIC, "C")
 
 INT32_MIN = np.iinfo(np.int32).min + 1
@@ -262,6 +264,8 @@ def nearest_neighbors(
     random_state,
     low_memory=True,
     use_pynndescent=True,
+    faiss_index_factory_string=None,
+    faiss_kwds=None,
     n_jobs=-1,
     verbose=False,
 ):
@@ -323,26 +327,23 @@ def nearest_neighbors(
 
         knn_search_index = None
     else:
-        # TODO: Hacked values for now
-        n_trees = min(64, 5 + int(round((X.shape[0]) ** 0.5 / 20.0)))
-        n_iters = max(5, int(round(np.log2(X.shape[0]))))
-
-        knn_search_index = NNDescent(
+        if verbose:
+            print("Computing Nearest Neighbors with GeneralizedIndex")
+        knn_search_index = GeneralizedIndex(
             X,
             n_neighbors=n_neighbors,
             metric=metric,
             metric_kwds=metric_kwds,
             random_state=random_state,
-            n_trees=n_trees,
-            n_iters=n_iters,
-            max_candidates=60,
             low_memory=low_memory,
             n_jobs=n_jobs,
             verbose=verbose,
-            compressed=False,
+            use_pynndescent=use_pynndescent,
+            faiss_index_factory_str=faiss_index_factory_string,
+            faiss_kwds=faiss_kwds
         )
         knn_indices, knn_dists = knn_search_index.neighbor_graph
-
+    
     if verbose:
         print(ts(), "Finished Nearest Neighbor Search")
     return knn_indices, knn_dists, knn_search_index
@@ -453,6 +454,9 @@ def fuzzy_simplicial_set(
     apply_set_operations=True,
     verbose=False,
     return_dists=None,
+    use_pynndescent=True,
+    faiss_index_factory_string=None,
+    faiss_kwds=None
 ):
     """Given a set of data X, a neighborhood size, and a measure of distance
     compute the fuzzy simplicial set (here represented as a fuzzy graph in
@@ -566,13 +570,16 @@ def fuzzy_simplicial_set(
         print(ts(),"Computing Fuzzy Simplicial Set")
     if knn_indices is None or knn_dists is None:
         knn_indices, knn_dists, _ = nearest_neighbors(
-            X,
-            n_neighbors,
-            metric,
-            metric_kwds,
-            angular,
-            random_state,
+            X=X,
+            n_neighbors=n_neighbors,
+            metric=metric,
+            metric_kwds=metric_kwds,
+            angular=angular,
+            random_state=random_state,
             verbose=verbose,
+            use_pynndescent=use_pynndescent,
+            faiss_index_factory_string=faiss_index_factory_string,
+            faiss_kwds=faiss_kwds
         )
 
     knn_dists = knn_dists.astype(np.float32)
@@ -961,6 +968,9 @@ def simplicial_set_embedding(
     parallel=False,
     verbose=False,
     tqdm_kwds=None,
+    use_pynndescent=True,
+    faiss_index_factory_string=None,
+    faiss_kwds=None
 ):
     """Perform a fuzzy simplicial set embedding, using a specified
     initialisation method and then minimizing the fuzzy set cross entropy
@@ -1251,25 +1261,31 @@ def simplicial_set_embedding(
 
         # Compute graph in embedding
         (knn_indices, knn_dists, rp_forest,) = nearest_neighbors(
-            embedding,
-            densmap_kwds["n_neighbors"],
-            "euclidean",
-            {},
-            False,
-            random_state,
+            X=embedding,
+            n_neighbors=densmap_kwds["n_neighbors"],
+            metric="euclidean",
+            metric_kwds={},
+            angular=False,
+            random_state=random_state,
             verbose=verbose,
+            use_pynndescent=use_pynndescent,
+            faiss_index_factory_string=faiss_index_factory_string,
+            faiss_kwds=faiss_kwds
         )
 
         emb_graph, emb_sigmas, emb_rhos, emb_dists = fuzzy_simplicial_set(
-            embedding,
-            densmap_kwds["n_neighbors"],
-            random_state,
-            "euclidean",
-            {},
-            knn_indices,
-            knn_dists,
+            X=embedding,
+            n_neighbors=densmap_kwds["n_neighbors"],
+            random_state=random_state,
+            metric="euclidean",
+            metric_kwds={},
+            knn_indices=knn_indices,
+            knn_dists=knn_dists,
             verbose=verbose,
             return_dists=True,
+            use_pynndescent=use_pynndescent,
+            faiss_index_factory_string=faiss_index_factory_string,
+            faiss_kwds=faiss_kwds
         )
 
         emb_graph = emb_graph.tocoo()
@@ -1711,6 +1727,9 @@ class UMAP(BaseEstimator):
         output_dens=False,
         disconnection_distance=None,
         precomputed_knn=(None, None, None),
+        use_pynndescent=True,
+        faiss_index_factory_string=None,
+        faiss_kwds=None,
     ):
         self.n_neighbors = n_neighbors
         self.metric = metric
@@ -1752,6 +1771,9 @@ class UMAP(BaseEstimator):
         self.disconnection_distance = disconnection_distance
         self.precomputed_knn = precomputed_knn
 
+        self.use_pynndescent = use_pynndescent
+        self.faiss_index_factory_string=faiss_index_factory_string
+        self.faiss_kwds=faiss_kwds
         self.n_jobs = n_jobs
 
         self.a = a
@@ -2193,6 +2215,9 @@ class UMAP(BaseEstimator):
             parallel=False,
             verbose=bool(np.max(result.verbose)),
             tqdm_kwds=self.tqdm_kwds,
+            use_pynndescent=self.use_pynndescent,
+            faiss_index_factory_string=self.faiss_index_factory_string,
+            faiss_kwds=self.faiss_kwds
         )
 
         if result.output_dens:
@@ -2263,6 +2288,9 @@ class UMAP(BaseEstimator):
             parallel=False,
             verbose=bool(np.max(result.verbose)),
             tqdm_kwds=self.tqdm_kwds,
+            use_pynndescent=self.use_pynndescent,
+            faiss_index_factory_string=self.faiss_index_factory_string,
+            faiss_kwds=self.faiss_kwds
         )
 
         if result.output_dens:
@@ -2335,6 +2363,9 @@ class UMAP(BaseEstimator):
             parallel=False,
             verbose=bool(np.max(result.verbose)),
             tqdm_kwds=self.tqdm_kwds,
+            use_pynndescent=self.use_pynndescent,
+            faiss_index_factory_string=self.faiss_index_factory_string,
+            faiss_kwds=self.faiss_kwds
         )
 
         if result.output_dens:
@@ -2635,9 +2666,11 @@ class UMAP(BaseEstimator):
                     self.angular_rp_forest,
                     random_state,
                     self.low_memory,
-                    use_pynndescent=True,
+                    use_pynndescent=self.use_pynndescent, # CHANGEME
                     n_jobs=self.n_jobs,
                     verbose=self.verbose,
+                    faiss_index_factory_string=self.faiss_index_factory_string,
+                    faiss_kwds=self.faiss_kwds
                 )
             else:
                 self._knn_indices = self.knn_indices
@@ -2669,6 +2702,9 @@ class UMAP(BaseEstimator):
                 True,
                 self.verbose,
                 self.densmap or self.output_dens,
+                use_pynndescent=self.use_pynndescent,
+                faiss_index_factory_string=self.faiss_index_factory_string,
+                faiss_kwds=self.faiss_kwds,
             )
             # Report the number of vertices with degree 0 in our umap.graph_
             # This ensures that they were properly disconnected.
@@ -2777,6 +2813,9 @@ class UMAP(BaseEstimator):
                         1.0,
                         1.0,
                         False,
+                        use_pynndescent=self.use_pynndescent,
+                        faiss_index_factory_string=self.faiss_index_factory_string,
+                        faiss_kwds=self.faiss_kwds
                     )
                 # product = self.graph_.multiply(target_graph)
                 # # self.graph_ = 0.99 * product + 0.01 * (self.graph_ +
@@ -2880,6 +2919,9 @@ class UMAP(BaseEstimator):
             self.random_state is None,
             self.verbose,
             tqdm_kwds=self.tqdm_kwds,
+            use_pynndescent=self.use_pynndescent,
+            faiss_index_factory_string=self.faiss_index_factory_string,
+            faiss_kwds=self.faiss_kwds,
         )
 
     def fit_transform(self, X, y=None, force_all_finite=True):
@@ -3061,10 +3103,9 @@ class UMAP(BaseEstimator):
             indices = submatrix(indices, indices_sorted, self._n_neighbors)
             dists = submatrix(dmat_shortened, indices_sorted, self._n_neighbors)
         else:
-            epsilon = 0.24 if self._knn_search_index._angular_trees else 0.12
             indices, dists = self._knn_search_index.query(
-                X, self.n_neighbors, epsilon=epsilon
-            )
+                    X, self.n_neighbors
+                )
 
         dists = dists.astype(np.float32, order="C")
         # Remove any nearest neighbours who's distances are greater than our disconnection_distance
@@ -3427,9 +3468,11 @@ class UMAP(BaseEstimator):
                     self.angular_rp_forest,
                     random_state,
                     self.low_memory,
-                    use_pynndescent=True,
+                    use_pynndescent=self.use_pynndescent, ### CHANGEME
                     n_jobs=self.n_jobs,
                     verbose=self.verbose,
+                    faiss_index_factory_string=self.faiss_index_factory_string,
+                    faiss_kwds=self.faiss_kwds,
                 )
 
                 self.graph_, self._sigmas, self._rhos = fuzzy_simplicial_set(
@@ -3445,6 +3488,9 @@ class UMAP(BaseEstimator):
                     self.local_connectivity,
                     True,
                     self.verbose,
+                    use_pynndescent=self.use_pynndescent,
+                    faiss_index_factory_string=self.faiss_index_factory_string,
+                    faiss_kwds=self.faiss_kwds,
                 )
                 knn_indices = self._knn_indices
 
@@ -3482,6 +3528,9 @@ class UMAP(BaseEstimator):
                 self.random_state is None,
                 self.verbose,
                 tqdm_kwds=self.tqdm_kwds,
+                use_pynndescent=self.use_pynndescent,
+                faiss_index_factory_string=self.faiss_index_factory_string,
+                faiss_kwds=self.faiss_kwds
             )
 
         else:
@@ -3513,6 +3562,9 @@ class UMAP(BaseEstimator):
                 self.local_connectivity,
                 True,
                 self.verbose,
+                use_pynndescent=self.use_pynndescent,
+                faiss_index_factory_string=self.faiss_index_factory_string,
+                faiss_kwds=self.faiss_kwds,
             )
 
             init = np.zeros(
@@ -3549,6 +3601,9 @@ class UMAP(BaseEstimator):
                 self.random_state is None,
                 self.verbose,
                 tqdm_kwds=self.tqdm_kwds,
+                use_pynndescent=self.use_pynndescent,
+                faiss_index_factory_string=self.faiss_index_factory_string,
+                faiss_kwds=self.faiss_kwds
             )
 
         if self.output_dens:
