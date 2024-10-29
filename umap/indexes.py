@@ -42,6 +42,7 @@ class GeneralizedIndex:
             n_iters = max(5, int(round(np.log2(self._raw_data.shape[0]))))
             self.search_index = NNDescent(
                 data=self._raw_data,
+                n_neighbors=self.n_neighbors,
                 metric=self.metric,
                 metric_kwds=self.metric_kwds,
                 random_state=self.random_state,
@@ -86,38 +87,39 @@ class GeneralizedIndex:
                 internal_index = self.search_index.index
                 downcasted_index_pointer = faiss.downcast_index(internal_index)
                 downcasted_index_classname = type(downcasted_index_pointer).__name__
-                
+            
             if downcasted_index_classname is not None:
                 index_pointer = downcasted_index_pointer
             else:
                 index_pointer = self.search_index
             # if type(self.search_index).__name__ == 'IndexHNSWFlat':
-            if type(index_pointer).__name__ == 'IndexHNSWFlat':
-            # in self.search_index.__class__.mro():
-                if 'efConstruction' in self.faiss_kwds.keys():
-                    # self.search_index.hnsw.efConstruction = faiss_kwds.get('efConstruction')
-                    index_pointer.hnsw.efConstruction = faiss_kwds.get('efConstruction')
-                if 'efSearch' in self.faiss_kwds.keys():
-                    # self.search_index.hnsw.efSearch = faiss_kwds.get('efSearch')
-                    index_pointer.hnsw.efSearch = faiss_kwds.get('efSearch')
-            # TODO ...
-            elif type(index_pointer).__name__.startswith('IndexIVF'):
-                if 'nlist' in self.faiss_kwds.keys():
-                    index_pointer.nlist = faiss_kwds.get('nlist')
-                if 'nprobe' in self.faiss_kwds.keys():
-                    index_pointer.nprobe = faiss_kwds.get('nprobe')
-            elif type(index_pointer).__name__ == 'IndexIVFFlat':
-                ## TODO
-                if 'nlist' in self.faiss_kwds.keys():
-                    index_pointer.nlist = faiss_kwds.get('nlist')
-                if 'nprobe' in self.faiss_kwds.keys():
-                    index_pointer.nprobe = faiss_kwds.get('nprobe')
-            elif type(index_pointer).__name__ == 'IndexIVFPQFastScan':
-                ## TODO
-                if 'nlist' in self.faiss_kwds.keys():
-                    index_pointer.nlist = faiss_kwds.get('nlist')
-                if 'nprobe' in self.faiss_kwds.keys():
-                    index_pointer.nprobe = faiss_kwds.get('nprobe')
+            if self.faiss_kwds is not None:
+                if type(index_pointer).__name__ == 'IndexHNSWFlat':
+                # in self.search_index.__class__.mro():
+                    if self.faiss_kwds is not None and 'efConstruction' in self.faiss_kwds.keys():
+                        # self.search_index.hnsw.efConstruction = faiss_kwds.get('efConstruction')
+                        index_pointer.hnsw.efConstruction = faiss_kwds.get('efConstruction')
+                    if self.faiss_kwds is not None and 'efSearch' in self.faiss_kwds.keys():
+                        # self.search_index.hnsw.efSearch = faiss_kwds.get('efSearch')
+                        index_pointer.hnsw.efSearch = faiss_kwds.get('efSearch')
+                # TODO ...
+                elif type(index_pointer).__name__.startswith('IndexIVF'):
+                    if 'nlist' in self.faiss_kwds.keys():
+                        index_pointer.nlist = faiss_kwds.get('nlist')
+                    if 'nprobe' in self.faiss_kwds.keys():
+                        index_pointer.nprobe = faiss_kwds.get('nprobe')
+                elif type(index_pointer).__name__ == 'IndexIVFFlat':
+                    ## TODO
+                    if 'nlist' in self.faiss_kwds.keys():
+                        index_pointer.nlist = faiss_kwds.get('nlist')
+                    if 'nprobe' in self.faiss_kwds.keys():
+                        index_pointer.nprobe = faiss_kwds.get('nprobe')
+                elif type(index_pointer).__name__ == 'IndexIVFPQFastScan':
+                    ## TODO
+                    if 'nlist' in self.faiss_kwds.keys():
+                        index_pointer.nlist = faiss_kwds.get('nlist')
+                    if 'nprobe' in self.faiss_kwds.keys():
+                        index_pointer.nprobe = faiss_kwds.get('nprobe')
             
             # Index Metric setting
             if self.metric in ['euclidean','l2','L2']:
@@ -146,6 +148,8 @@ class GeneralizedIndex:
             except Exception as e:
                 print("Encountered an error while building the knn graph with the faiss index: ",e)
                 raise(e)
+            if self.metric in ['euclidean','l2','L2']:
+                knn_dists = np.sqrt(knn_dists)
             tot_time = time.time()-start
             knn_construction_time = tot_time - index_creation_time
         self.neighbor_graph = (knn_indices,knn_dists)
