@@ -36,6 +36,16 @@ class GeneralizedIndex:
         if self.verbose:
             print(f'Setting {omp_num_threads} threads for Index.')
         faiss.omp_set_num_threads(num_threads=omp_num_threads)
+        if self.metric in ['euclidean','l2','L2']:
+            faiss_metric = faiss.METRIC_L2
+        elif self.metric == 'cosine' or self.metric.lower() in ['inner','ip']:
+            faiss_metric = faiss.METRIC_INNER_PRODUCT
+        elif self.metric == 'canberra':
+            faiss_metric = faiss.METRIC_Canberra
+        elif not self.use_pynndescent:
+            if self.verbose:
+                print(f"Metric {self.metric} not accepted by Faiss. Using PyNNDescent.")
+            self.use_pynndescent=True
         if self.use_pynndescent:
             start = time.time()
             n_trees = min(64, 5 + int(round((self._raw_data.shape[0]) ** 0.5 / 20.0)))
@@ -66,10 +76,11 @@ class GeneralizedIndex:
             if self.faiss_index_factory_str is not None:
                 assert isinstance(self.faiss_index_factory_str,str), "The provided index factory string is not a string"
                 # If the cosine metric is used, the vectors have to be L2-normalized before adding them or querying them
-                if self.metric.lower()=='cosine' and not ('l2norm' in self.faiss_index_factory_str.lower()):
-                    self.faiss_index_factory_str = 'L2norm,'+self.faiss_index_factory_str
+                if self.metric.lower()=='cosine':
+                    self._raw_data_norm = np.copy(self._raw_data).astype(np.float32)
+                    faiss.normalize_L2(self._raw_data_norm)
                 try:
-                    self.search_index = faiss.index_factory(self._raw_data.shape[1], self.faiss_index_factory_str)
+                    self.search_index = faiss.index_factory(self._raw_data.shape[1], self.faiss_index_factory_str, faiss_metric)
                     self.search_index.verbose = self.verbose # Maybe check index type before assignment
                     if self.verbose:
                         print("Built the index from the factory string. Index Class:",type(self.search_index).__name__)
@@ -79,7 +90,8 @@ class GeneralizedIndex:
             else:
                 self.search_index = faiss.IndexHNSWFlat(
                     self._raw_data.shape[1],
-                    self.n_neighbors
+                    self.n_neighbors,
+                    faiss_metric
                 )
             # Initilize general index pointer to the core Index
             downcasted_index_classname = None
@@ -122,12 +134,7 @@ class GeneralizedIndex:
                         index_pointer.nprobe = faiss_kwds.get('nprobe')
             
             # Index Metric setting
-            if self.metric in ['euclidean','l2','L2']:
-                self.search_index.metric_type = faiss.METRIC_L2
-            elif self.metric == 'cosine' or self.metric.lower() in ['inner','ip']:
-                self.search_index.metric_type = faiss.METRIC_INNER_PRODUCT
-            elif self.metric == 'canberra':
-                self.search_index.metric_type = faiss.METRIC_Canberra
+            
                 
             # Train the index/quantizer if present
             try:
@@ -138,18 +145,23 @@ class GeneralizedIndex:
                 raise(e)
             # Add the vectors to the index (costly operation)
             try:
-                self.search_index.add(self._raw_data)
+                self.search_index.add(self._raw_data) if metric != 'cosine' else self.search_index.add(self._raw_data_norm)
             except Exception as e:
                 print("Encountered an error while adding the training data to the Faiss index: ",e)
                 raise(e)
             index_creation_time = time.time() - start
             try:
-                knn_dists, knn_indices = self.search_index.search(self._raw_data, self.n_neighbors)
+                if self.metric == 'cosine':
+                    knn_dists, knn_indices = self.search_index.search(self._raw_data_norm, self.n_neighbors)
+                else:
+                    knn_dists, knn_indices = self.search_index.search(self._raw_data, self.n_neighbors)
             except Exception as e:
                 print("Encountered an error while building the knn graph with the faiss index: ",e)
                 raise(e)
             if self.metric in ['euclidean','l2','L2']:
                 knn_dists = np.sqrt(knn_dists)
+            elif self.metric.lower() in ['cosine','ip', 'inner']:
+                knn_dists = 1-knn_dists
             tot_time = time.time()-start
             knn_construction_time = tot_time - index_creation_time
         self.neighbor_graph = (knn_indices,knn_dists)
@@ -167,7 +179,14 @@ class GeneralizedIndex:
             if X.shape[0] == self._raw_data.shape[0]:
                 return self.neighbor_graph
             else:
-                d,i = self.search_index.search(X,n_neighbors)
+                if self.metric != 'cosine':
+                    d,i = self.search_index.search(X,n_neighbors)
+                else:
+                    Xq = X.copy().astype(np.float32)
+                    faiss.normalize_L2(Xq)
+                    d,i = self.search_index.search(Xq,n_neighbors)
+                if self.metric.lower() in ['cosine','ip', 'inner']:
+                    d = 1-d
                 return i,d
     
     def prepare(self):
