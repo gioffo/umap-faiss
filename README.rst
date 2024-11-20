@@ -1,44 +1,17 @@
 .. -*- mode: rst -*-
 
+.. note::
+
+This project is a fork of `umap <https://github.com/lmcinnes/umap>`_ by Leland McInnes.
+
+----
+
+Original README:
+
 .. image:: doc/logo_large.png
   :width: 600
   :alt: UMAP logo
   :align: center
-
-|pypi_version|_ |pypi_downloads|_
-
-|conda_version|_ |conda_downloads|_
-
-|License|_ |build_status|_ |Coverage|_
-
-|Docs|_ |joss_paper|_
-
-.. |pypi_version| image:: https://img.shields.io/pypi/v/umap-learn.svg
-.. _pypi_version: https://pypi.python.org/pypi/umap-learn/
-
-.. |pypi_downloads| image:: https://pepy.tech/badge/umap-learn/month
-.. _pypi_downloads: https://pepy.tech/project/umap-learn
-
-.. |conda_version| image:: https://anaconda.org/conda-forge/umap-learn/badges/version.svg
-.. _conda_version: https://anaconda.org/conda-forge/umap-learn
-
-.. |conda_downloads| image:: https://anaconda.org/conda-forge/umap-learn/badges/downloads.svg
-.. _conda_downloads: https://anaconda.org/conda-forge/umap-learn
-
-.. |License| image:: https://img.shields.io/pypi/l/umap-learn.svg
-.. _License: https://github.com/lmcinnes/umap/blob/master/LICENSE.txt
-
-.. |build_status| image:: https://dev.azure.com/TutteInstitute/build-pipelines/_apis/build/status/lmcinnes.umap?branchName=master
-.. _build_status: https://dev.azure.com/TutteInstitute/build-pipelines/_build/latest?definitionId=2&branchName=master
-
-.. |Coverage| image:: https://coveralls.io/repos/github/lmcinnes/umap/badge.svg
-.. _Coverage: https://coveralls.io/github/lmcinnes/umap
-
-.. |Docs| image:: https://readthedocs.org/projects/umap-learn/badge/?version=latest
-.. _Docs: https://umap-learn.readthedocs.io/en/latest/?badge=latest
-
-.. |joss_paper| image:: http://joss.theoj.org/papers/10.21105/joss.00861/status.svg
-.. _joss_paper: https://doi.org/10.21105/joss.00861
 
 ====
 UMAP
